@@ -131,13 +131,18 @@ data TypeError
 runInfer :: Infer a -> Either TypeError a
 runInfer m = runExcept $ evalStateT (runReaderT m Set.empty) initInfer
 
-inferType :: Env -> Expr -> Infer (Subst, Type)
-inferType env ex = do
+genConstraints :: Env -> Expr -> Infer ([Constraint], Type)
+genConstraints env ex = do
   (as, cs, t) <- infer ex
   let unbounds = Set.fromList (As.keys as) `Set.difference` Set.fromList (Env.keys env)
   unless (Set.null unbounds) $ throwError $ UnboundVariable (Set.findMin unbounds)
   let cs' = [ExpInstConst t s | (x, s) <- Env.toList env, t <- As.lookup x as]
-  subst <- solve (cs ++ cs')
+  pure (cs ++ cs', t)
+
+inferType :: Env -> Expr -> Infer (Subst, Type)
+inferType env ex = do
+  (cs, t) <- genConstraints env ex
+  subst <- solve cs
   return (subst, apply subst t)
 
 -- | Solve for the toplevel type of an expression in a given environment
@@ -154,7 +159,7 @@ extendMSet :: TVar -> Infer a -> Infer a
 extendMSet x = local (Set.insert x)
 
 letters :: [String]
-letters = [1..] >>= flip replicateM ['a'..'z']
+letters = [ 't' : show n | n <- 5 : delete 5 [1..] ]
 
 fresh :: Infer Type
 fresh = do

@@ -14,6 +14,7 @@ import Env
 import Type
 import Syntax
 
+import Control.Monad (replicateM, unless)
 import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.Reader
@@ -50,7 +51,7 @@ data Constraint = EqConst Type Type
                 deriving (Show, Eq, Ord)
 
 newtype Subst = Subst (Map.Map TVar Type)
-  deriving (Eq, Ord, Show, Monoid)
+  deriving (Eq, Ord, Show, Semigroup, Monoid)
 
 
 class Substitutable a where
@@ -176,6 +177,9 @@ ops Add = typeInt `TArr` (typeInt `TArr` typeInt)
 ops Mul = typeInt `TArr` (typeInt `TArr` typeInt)
 ops Sub = typeInt `TArr` (typeInt `TArr` typeInt)
 ops Eql = typeInt `TArr` (typeInt `TArr` typeBool)
+
+instance MonadFail Identity where
+  fail = error
 
 infer :: Expr -> Infer (As.Assumption, [Constraint], Type)
 infer expr = case expr of

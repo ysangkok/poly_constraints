@@ -20,8 +20,6 @@ import Prelude hiding (lookup)
 import Syntax
 import Type
 
-import Data.Monoid
-import Data.Foldable hiding (toList)
 import qualified Data.Map as Map
 
 -------------------------------------------------------------------------------
@@ -64,6 +62,8 @@ fromList xs = TypeEnv (Map.fromList xs)
 toList :: Env -> [(Name, Scheme)]
 toList (TypeEnv env) = Map.toList env
 
+instance Semigroup Env where
+  a <> b = merge a b
+
 instance Monoid Env where
   mempty = empty
-  mappend = merge

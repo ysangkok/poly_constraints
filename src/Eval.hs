@@ -12,6 +12,8 @@ data Value
 
 type TermEnv = Map.Map String Value
 type Interpreter t = Identity t
+instance MonadFail Identity where
+  fail = error
 
 emptyTmenv :: TermEnv
 emptyTmenv = Map.empty

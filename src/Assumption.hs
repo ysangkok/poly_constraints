@@ -15,8 +15,6 @@ import Prelude hiding (lookup)
 import Syntax
 import Type
 
-import Data.Foldable hiding (toList)
-
 data Assumption = Assumption { assumptions :: [(Name, Type)] }
   deriving (Eq, Show)
 

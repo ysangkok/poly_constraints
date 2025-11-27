@@ -18,6 +18,7 @@ import Type
 import Syntax
 import Infer
 
+import Prelude hiding ((<>))
 import Text.PrettyPrint
 import qualified Data.Map as Map
 

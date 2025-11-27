@@ -10,15 +10,14 @@ import Pretty
 import Eval
 import qualified Env
 
-import Data.Monoid
+import Control.Monad (when)
 import qualified Data.Map as Map
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 
-import Control.Monad.Identity
 import Control.Monad.State.Strict
 
-import Data.List (isPrefixOf, foldl')
+import Data.List (isPrefixOf)
 
 import System.Exit
 import System.Environment

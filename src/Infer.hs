@@ -14,6 +14,7 @@ import Env
 import Type
 import Syntax
 
+import Control.Applicative ((<|>))
 import Control.Monad (replicateM, unless)
 import Control.Monad.Except
 import Control.Monad.State
@@ -301,12 +302,24 @@ occursCheck ::  FreeTypeVars a => TVar -> a -> Bool
 occursCheck a t = a `Set.member` ftv t
 
 nextSolvable :: [Constraint] -> (Constraint, [Constraint])
-nextSolvable xs = fromJust (find solvable (chooseOne xs))
-  where
-    chooseOne xs = [(x, ys) | x <- xs, let ys = delete x xs]
-    solvable (EqConst{}, _) = True
-    solvable (ExpInstConst{}, _) = True
-    solvable (ImpInstConst t1 ms t2, cs) = Set.null ((ftv t2 `Set.difference` ms) `Set.intersection` atv cs)
+nextSolvable xs = fromJust $
+  let
+    allOptions = chooseOne xs
+  in
+      find (isEqConst . fst) allOptions
+  <|> find (isExpInstConst . fst) allOptions
+  <|> find isImpInstConstSolvable allOptions
+
+chooseOne xs = [(x, ys) | x <- xs, let ys = delete x xs]
+
+isEqConst EqConst{} = True
+isEqConst _ = False
+
+isExpInstConst ExpInstConst{} = True -- curly
+isExpInstConst _ = False
+
+isImpInstConstSolvable (ImpInstConst t1 ms t2, cs) = Set.null ((ftv t2 `Set.difference` ms) `Set.intersection` atv cs)
+isImpInstConstSolvable _ = False
 
 solve :: [Constraint] -> Infer Subst
 solve [] = return emptySubst

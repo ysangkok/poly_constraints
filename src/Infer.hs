@@ -57,10 +57,22 @@ newtype Subst = Subst (Map.Map TVar Type)
 class Substitutable a where
   apply :: Subst -> a -> a
 
-instance Substitutable TVar where
-  apply (Subst s) a = tv
-    where t = TVar a
-          (TVar tv) = Map.findWithDefault t a s
+instance Substitutable (Set.Set TVar) where
+  apply (Subst s) as =
+    Set.unions $ Set.map substOne as
+    where
+      substOne :: TVar -> Set.Set TVar
+      substOne needle =
+        case Map.lookup needle s of
+          Nothing -> Set.singleton needle
+          Just tipe -> tipeToVar tipe
+      tipeToVar :: Type -> Set.Set TVar
+      tipeToVar tipe =
+        case tipe of
+          TVar a -> Set.singleton a
+          TCon _ -> Set.empty
+          TArr t1 t2 -> Set.union (tipeToVar t1) (tipeToVar t2)
+
 
 instance Substitutable Type where
   apply _ (TCon a)       = TCon a
@@ -78,10 +90,6 @@ instance Substitutable Constraint where
 
 instance Substitutable a => Substitutable [a] where
   apply = map . apply
-
-instance (Ord a, Substitutable a) => Substitutable (Set.Set a) where
-  apply = Set.map . apply
-
 
 class FreeTypeVars a where
   ftv :: a -> Set.Set TVar

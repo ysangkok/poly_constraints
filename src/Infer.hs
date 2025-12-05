@@ -1,6 +1,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Infer (
   Constraint(..),
@@ -8,6 +10,8 @@ module Infer (
   Subst(..),
   inferTop
 ) where
+
+import Debug.Trace
 
 import qualified Assumption as As
 import Env
@@ -20,8 +24,10 @@ import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Identity
 
-import Data.List (delete, find, nub)
+import Data.List (delete, find, nub, splitAt, null, (\\))
 import Data.Maybe (fromJust)
+import Data.Monoid
+import Data.Traversable (for)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -48,7 +54,8 @@ initInfer = InferState { count = 0 }
 data Constraint = EqConst Type Type
                 | ExpInstConst Type Scheme
                 | ImpInstConst Type (Set.Set TVar) Type
-                deriving (Show, Eq, Ord)
+                | PredConst Pred
+                deriving (Show)
 
 newtype Subst = Subst (Map.Map TVar Type)
   deriving (Eq, Ord, Show, Semigroup, Monoid)
@@ -79,14 +86,18 @@ instance Substitutable Type where
   apply (Subst s) t@(TVar a) = Map.findWithDefault t a s
   apply s (t1 `TArr` t2) = apply s t1 `TArr` apply s t2
 
+instance Substitutable Pred where
+  apply s (Pred cName tipe) = Pred cName $ apply s tipe
+
 instance Substitutable Scheme where
   apply (Subst s) (Forall as t)   = Forall as $ apply s' t
-                            where s' = Subst $ foldr Map.delete s as
+                            where s' = Subst $ foldr Map.delete s $ map qualT as
 
 instance Substitutable Constraint where
    apply s (EqConst t1 t2) = EqConst (apply s t1) (apply s t2)
    apply s (ExpInstConst t sc) = ExpInstConst (apply s t) (apply s sc)
    apply s (ImpInstConst t1 ms t2) = ImpInstConst (apply s t1) (apply s ms) (apply s t2)
+   apply s (PredConst pred) = PredConst (apply s pred)
 
 instance Substitutable a => Substitutable [a] where
   apply = map . apply
@@ -103,7 +114,7 @@ instance FreeTypeVars TVar where
   ftv = Set.singleton
 
 instance FreeTypeVars Scheme where
-  ftv (Forall as t) = ftv t `Set.difference` Set.fromList as
+  ftv (Forall as t) = ftv t `Set.difference` Set.fromList (map qualT as)
 
 instance FreeTypeVars a => FreeTypeVars [a] where
   ftv   = foldr (Set.union . ftv) Set.empty
@@ -130,6 +141,10 @@ data TypeError
   | UnboundVariable String
   | Ambigious [Constraint]
   | UnificationMismatch [Type] [Type]
+  | InstanceNotFound
+      { wanted :: Pred
+      , got :: Maybe Pred
+      }
 
 -------------------------------------------------------------------------------
 -- Inference
@@ -175,14 +190,15 @@ fresh = do
     put s{count = count s + 1}
     return $ TVar $ TV (letters !! count s)
 
-instantiate ::  Scheme -> Infer Type
+instantiate ::  Scheme -> Infer (Qual Type)
 instantiate (Forall as t) = do
     as' <- mapM (const fresh) as
-    let s = Subst $ Map.fromList $ zip as as'
-    return $ apply s t
+    let s = Subst $ Map.fromList $ zip (map qualT as) as'
+    return $ Qual (apply s $ qualPreds =<< as) $ apply s t
 
 generalize :: Set.Set TVar -> Type -> Scheme
-generalize free t  = Forall as t
+generalize free t =
+  Forall [Qual [] a | a <- as] t
     where as = Set.toList $ ftv t `Set.difference` free
 
 ops :: Binop -> Type
@@ -258,7 +274,9 @@ inferTop env ((name, ex):xs) = case inferExpr env ex of
   Right ty -> inferTop (extend env (name, ty)) xs
 
 normalize :: Scheme -> Scheme
-normalize (Forall _ body) = Forall (map snd ord) (normtype body)
+normalize (Forall _ body) =
+  -- TODO should be Qual cName
+  Forall [Qual undefined x | (_,x) <- ord ] (normtype body)
   where
     ord = zip (nub $ fv body) (map TV letters)
 
@@ -305,20 +323,49 @@ bind a t | t == TVar a     = return emptySubst
          | occursCheck a t = throwError $ InfiniteType a t
          | otherwise       = return (Subst $ Map.singleton a t)
 
+-- First param is what we got, second is what we need
+match :: Pred -> Pred -> Infer (Maybe Subst)
+match got@(Pred classCon1 tipe1) wanted@(Pred classCon2 tipe2)
+  | classCon1 /= classCon2 = pure Nothing
+  | otherwise = do
+    case (tipe1, tipe2) of
+      (TCon con1, TCon con2) | con1 /= con2 ->
+        throwError $ InstanceNotFound { wanted, got=Just got }
+      _ ->
+        Just <$> unifies tipe1 tipe2
+
 occursCheck ::  FreeTypeVars a => TVar -> a -> Bool
 occursCheck a t = a `Set.member` ftv t
 
 nextSolvable :: [Constraint] -> (Constraint, [Constraint])
 nextSolvable xs = fromJust (find solvable (chooseOne xs))
   where
-    chooseOne xs = [(x, ys) | x <- xs, let ys = delete x xs]
+    chooseOne xs =
+      [ (head tai, hea ++ drop 1 tai)
+      | x <- [0 .. length xs - 1]
+      , let (hea,tai) = splitAt x xs
+      ]
     solvable (EqConst{}, _) = True
     solvable (ExpInstConst{}, _) = True
     solvable (ImpInstConst t1 ms t2, cs) = Set.null ((ftv t2 `Set.difference` ms) `Set.intersection` atv cs)
+    solvable (PredConst{}, _) = False -- not sure about whether it is good to wait with these until last
+
+isPredConst (PredConst{}) = True
+isPredConst _ = False
 
 solve :: [Constraint] -> Infer Subst
 solve [] = return emptySubst
-solve cs = solve' (nextSolvable cs)
+solve cs =
+  if all isPredConst cs
+     then do
+       case cs of
+         PredConst pred : rest -> do
+           (subst, remaining) <- discharge pred
+           case remaining of
+             [] -> pure ()
+             wanted:_ -> throwError $ InstanceNotFound {wanted, got=Nothing}
+           (subst `compose`) <$> solve rest
+     else solve' (nextSolvable cs)
 
 solve' :: (Constraint, [Constraint]) -> Infer Subst
 solve' (EqConst t1 t2, cs) = do
@@ -329,4 +376,28 @@ solve' (ImpInstConst t1 ms t2, cs) =
   solve (ExpInstConst t1 (generalize ms t2) : cs)
 solve' (ExpInstConst t s, cs) = do
   s' <- instantiate s
-  solve (EqConst t s' : cs)
+  solve ((PredConst <$> qualPreds s') ++ EqConst t (qualT s') : cs)
+
+-- For testing. Goes with eqEnv
+eqClassEnv :: ClassEnv
+eqClassEnv = ClassEnv
+  [ Qual
+      [] -- No super class constraints
+      (Pred (CName "Eq") (TCon "Bool"))
+  ]
+
+discharge :: Pred -> Infer (Subst, [Pred])
+discharge p = do
+  matchingInstances <-
+    for (getInsts eqClassEnv) $ \(Qual qs t) -> do
+      res <- match t p
+      pure $ First $ fmap (qs,) res
+  case getFirst $ mconcat matchingInstances of
+    Just (qs, subst) -> do
+      let qs' = apply subst qs
+      discharged <- traverse discharge qs'
+      pure (mconcat discharged)
+
+    Nothing -> do
+      -- unable to discharge
+      pure (mempty, pure p)

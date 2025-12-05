@@ -1,5 +1,6 @@
 {-# Language FlexibleInstances #-}
 {-# Language TypeSynonymInstances #-}
+{-# Language NamedFieldPuns #-}
 
 module Pretty (
   ppconstraint,
@@ -46,7 +47,11 @@ instance Pretty Type where
 
 instance Pretty Scheme where
   ppr p (Forall [] t) = ppr p t
-  ppr p (Forall ts t) = text "forall" <+> hcat (punctuate space (map (ppr p) ts)) <> text "." <+> ppr p t
+  -- TODO should show qualPreds
+  ppr p (Forall ts t) = text "forall" <+> hcat (punctuate space (map (ppr p . qualT) ts))
+    <> text "."
+    <> text (show $ map qualPreds ts)
+    <+> ppr p t
 
 instance Pretty Binop where
   ppr _ Add = text "+"
@@ -90,6 +95,13 @@ instance Show TypeError where
   show (Ambigious cs) =
     concat ["Cannot not match expected type: '" ++ pptype a ++ "' with actual type: '" ++ pptype b ++ "'\n" | (EqConst a b) <- cs]
   show (UnboundVariable a) = "Not in scope: " ++ a
+  show (InstanceNotFound {wanted, got}) =
+    "Instance not found for class "
+    ++ cNameToString (predCName wanted)
+    ++ " got "
+    ++ maybe "<no instance>" (pptype . predInst) got
+    ++ " as an instance but wanted "
+    ++ pptype (predInst wanted)
 
 ppscheme :: Scheme -> String
 ppscheme = render . ppr 0

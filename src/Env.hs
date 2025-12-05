@@ -27,7 +27,7 @@ import qualified Data.Map as Map
 -------------------------------------------------------------------------------
 
 data Env = TypeEnv { types :: Map.Map Name Scheme }
-  deriving (Eq, Show)
+  deriving (Show)
 
 empty :: Env
 empty = TypeEnv Map.empty
@@ -67,3 +67,16 @@ instance Semigroup Env where
 
 instance Monoid Env where
   mempty = empty
+
+eqEnv :: Env
+eqEnv =
+  singleton "eq" $
+    Forall [Qual [Pred (CName "Eq") $ TVar "a"]
+                 "a"
+           ] $
+      TArr (TVar "a") $
+        TArr (TVar "a") typeBool
+
+--try
+--let Right ex2 = parseExpr "\\m -> (let y = m in (let x = eq (y True) (y False) in x))"
+--pPrint $ runInfer $ do { inferType eqEnv ex2 }

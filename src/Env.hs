@@ -13,6 +13,7 @@ module Env (
   keys,
   fromList,
   toList,
+  eqEnv,
 ) where
 
 import Prelude hiding (lookup)

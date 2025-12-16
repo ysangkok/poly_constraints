@@ -87,21 +87,21 @@ instance Pretty Subst where
   ppr p (Subst s) = vcat (punctuate space (map pprSub $ Map.toList s))
     where pprSub (a, b) = ppr 0 a <+> text "~" <+> ppr 0 b
 
-instance Show TypeError where
-  show (UnificationFail a b) =
-    concat ["Cannot unify types: \n\t", pptype a, "\nwith \n\t", pptype b]
-  show (InfiniteType (TV a) b) =
-    concat ["Cannot construct the infinite type: ", a, " = ", pptype b]
-  show (Ambigious cs) =
-    concat ["Cannot not match expected type: '" ++ pptype a ++ "' with actual type: '" ++ pptype b ++ "'\n" | (EqConst a b) <- cs]
-  show (UnboundVariable a) = "Not in scope: " ++ a
-  show (InstanceNotFound {wanted, got}) =
-    "Instance not found for class "
-    ++ cNameToString (predCName wanted)
-    ++ " got "
-    ++ maybe "<no instance>" (pptype . predInst) got
-    ++ " as an instance but wanted "
-    ++ pptype (predInst wanted)
+showTE :: TypeError -> String
+showTE (UnificationFail a b) =
+  concat ["Cannot unify types: \n\t", pptype a, "\nwith \n\t", pptype b]
+showTE (InfiniteType (TV a) b) =
+  concat ["Cannot construct the infinite type: ", a, " = ", pptype b]
+showTE (Ambigious cs) =
+  concat ["Cannot not match expected type: '" ++ pptype a ++ "' with actual type: '" ++ pptype b ++ "'\n" | (EqConst a b) <- cs]
+showTE (UnboundVariable a) = "Not in scope: " ++ a
+showTE (InstanceNotFound {wanted, got}) =
+  "Instance not found for class "
+  ++ cNameToString (predCName wanted)
+  ++ " got "
+  ++ maybe "<no instance>" (pptype . predInst) got
+  ++ " as an instance but wanted "
+  ++ pptype (predInst wanted)
 
 ppscheme :: Scheme -> String
 ppscheme = render . ppr 0

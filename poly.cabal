@@ -36,3 +36,11 @@ executable poly
   hs-source-dirs:      src
   main-is:             Main.hs
   ghc-options: -Wincomplete-patterns -Wincomplete-uni-patterns
+
+test-suite mytest
+  type: exitcode-stdio-1.0
+  build-depends: base, text, pretty-simple, parsec, containers, mtl
+  hs-source-dirs: src
+  main-is: Test.hs
+  default-language: Haskell2010
+

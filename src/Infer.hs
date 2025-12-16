@@ -8,7 +8,10 @@ module Infer (
   Constraint(..),
   TypeError(..),
   Subst(..),
-  inferTop
+  inferTop,
+  runInfer,
+  inferType,
+  genConstraints,
 ) where
 
 import Debug.Trace
@@ -145,6 +148,7 @@ data TypeError
       { wanted :: Pred
       , got :: Maybe Pred
       }
+  deriving Show
 
 -------------------------------------------------------------------------------
 -- Inference
@@ -182,7 +186,7 @@ extendMSet :: TVar -> Infer a -> Infer a
 extendMSet x = local (Set.insert x)
 
 letters :: [String]
-letters = [ 't' : show n | n <- 5 : delete 5 [1..] ]
+letters = [ 't' : show n | n <- [0..] ]
 
 fresh :: Infer Type
 fresh = do
